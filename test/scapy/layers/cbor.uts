@@ -1365,6 +1365,93 @@ raw_data = bytes(outer)
 outer2 = Outer(raw_data)
 assert outer2.label.val == "outer"
 
+= CBORF_PACKET trailing padding is returned to the enclosing structure
+from scapy.cbor.cborfields import CBORF_ARRAY, CBORF_INTEGER, CBORF_TEXT_STRING, CBORF_PACKET
+from scapy.cborpacket import CBOR_Packet
+from scapy.packet import Padding
+from scapy.cbor.cbor import CBOR_UNSIGNED_INTEGER, CBOR_TEXT_STRING
+from scapy.cbor.cborcodec import CBORcodec_TEXT_STRING, CBOR_encode_head
+
+class PadInner(CBOR_Packet):
+    CBOR_root = CBORF_ARRAY(
+        CBORF_INTEGER("x", 10),
+    )
+
+class PadOuter(CBOR_Packet):
+    CBOR_root = CBORF_ARRAY(
+        CBORF_TEXT_STRING("label", "outer"),
+        CBORF_PACKET("inner", None, PadInner),
+    )
+
+inner = PadInner()
+inner.x = CBOR_UNSIGNED_INTEGER(5)
+excess = b"\xde\xad\xbe\xef"
+wire = (CBOR_encode_head(4, 2) + CBORcodec_TEXT_STRING.enc(CBOR_TEXT_STRING("lbl"))
+        + bytes(CBOR_encode_head(4, 1)) + bytes(CBOR_UNSIGNED_INTEGER(5))
+        + excess)
+outer = PadOuter(wire)
+assert outer.inner.x.val == 5
+# Padding must not be left inside the embedded packet: it belongs to the
+# enclosing structure, which can then keep dissecting the stream.
+assert outer.inner.getlayer(Padding) is None
+outer_pad = outer.getlayer(Padding)
+assert outer_pad is not None
+assert outer_pad.load == excess
+assert bytes(outer) == wire
+
+= CBORF_PACKET keeps a genuine Raw payload
+from scapy.cbor.cborfields import CBORF_ARRAY, CBORF_INTEGER, CBORF_PACKET
+from scapy.cborpacket import CBOR_Packet
+from scapy.packet import Raw
+from scapy.cbor.cbor import CBOR_UNSIGNED_INTEGER
+from scapy.cbor.cborcodec import CBOR_encode_head
+
+class RawInner(CBOR_Packet):
+    CBOR_root = CBORF_ARRAY(
+        CBORF_INTEGER("x", 10),
+    )
+    def extract_padding(self, s):
+        # The trailing bytes are meaningful content, not padding.
+        return s, b""
+
+class RawOuter(CBOR_Packet):
+    CBOR_root = CBORF_ARRAY(
+        CBORF_PACKET("inner", None, RawInner),
+    )
+
+inner = RawInner()
+inner.x = CBOR_UNSIGNED_INTEGER(7)
+inner /= Raw(load=b"\xca\xfe")
+wire = CBOR_encode_head(4, 1) + bytes(inner)
+outer = RawOuter(wire)
+# A Raw payload is meaningful content: it must stay attached to the embedded
+# packet instead of being stripped off and reinterpreted as padding.
+raw = outer.inner.getlayer(Raw)
+assert raw is not None
+assert raw.load == b"\xca\xfe"
+assert bytes(outer) == wire
+
+= CBOR_Packet standalone excess data is kept as padding and round-trips
+from scapy.cbor.cborfields import CBORF_ARRAY, CBORF_INTEGER
+from scapy.cborpacket import CBOR_Packet
+from scapy.packet import Padding
+from scapy.cbor.cbor import CBOR_UNSIGNED_INTEGER
+from scapy.cbor.cborcodec import CBOR_encode_head
+
+class PadPkt(CBOR_Packet):
+    CBOR_root = CBORF_ARRAY(
+        CBORF_INTEGER("x", 10),
+    )
+
+excess = b"\xde\xad\xbe\xef"
+wire = bytes(CBOR_encode_head(4, 1)) + bytes(CBOR_UNSIGNED_INTEGER(5)) + excess
+pkt = PadPkt(wire)
+assert pkt.x.val == 5
+pad = pkt.getlayer(Padding)
+assert pad is not None
+assert pad.load == excess
+assert bytes(pkt) == wire
+
 + CBORF_SEMANTIC_TAG
 
 = CBORF_SEMANTIC_TAG encode with inner integer

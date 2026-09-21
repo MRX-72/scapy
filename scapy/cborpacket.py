@@ -15,6 +15,7 @@ from scapy.packet import Packet
 from typing import (
     Any,
     Dict,
+    Optional,
     Tuple,
     Type,
     cast,
@@ -63,3 +64,15 @@ class CBOR_Packet(Packet, metaclass=CBORPacket_metaclass):
         populates each field on the packet, and returns any unconsumed bytes.
         """
         return self.CBOR_root.dissect(self, x)
+
+    def extract_padding(self, s):
+        # type: (bytes) -> Tuple[bytes, Optional[bytes]]
+        """Return all unconsumed bytes as padding.
+
+        A CBOR object is self-describing: once CBOR_root has consumed the
+        object, any trailing bytes belong to the enclosing structure, not to
+        this packet. Exposing them as Padding (rather than a Raw payload)
+        lets an embedding CBORF_field recover them and continue dissecting
+        the enclosing data.
+        """
+        return b"", s

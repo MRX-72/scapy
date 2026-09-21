@@ -153,13 +153,20 @@ class CBORF_field(CBORF_element, Generic[_I, _A]):
             c = cls(s, _underlayer=_underlayer)
         except CBORF_badsequence:
             c = packet.Raw(s, _underlayer=_underlayer)  # type: ignore
-        cpad = c.getlayer(packet.Raw)
-        s = b""
-        if cpad is not None:
-            s = cpad.load
-            if cpad.underlayer:
-                del cpad.underlayer.payload
-        return c, s
+        # CBOR_Packet stores any bytes not consumed by CBOR_root as Padding
+        # (see CBOR_Packet.extract_padding). Such padding belongs to the
+        # enclosing structure: remove it and return it so the parent keeps
+        # dissecting. A genuine Raw payload is meaningful content and must
+        # be left in place, so only Padding layers are peeled.
+        pad = b""
+        while isinstance(c.payload, packet.Padding):
+            layer = c.payload
+            pad += layer.load
+            c.payload = layer.payload
+            if isinstance(c.payload, packet.Packet) and \
+                    c.payload.__class__ is not packet.NoPayload:
+                c.payload.underlayer = c
+        return c, pad
 
     def build(self, pkt):
         # type: (CBOR_Packet) -> bytes
