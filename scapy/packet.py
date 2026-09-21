@@ -105,6 +105,8 @@ class Packet(
         "process_information"
     ]
     name = None
+    # Packet classes listed here are inlined by Packet_metaclass; only Field
+    # instances remain once the class is created.
     fields_desc = []  # type: ClassVar[List[AnyField]]
     deprecated_fields = {}  # type: Dict[str, Tuple[str, str]]
     overload_fields = {}  # type: Dict[Type[Packet], Dict[str, Any]]
